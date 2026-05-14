@@ -1,0 +1,58 @@
+# =========================
+# Web Framework
+# =========================
+fastapi==0.115.12
+uvicorn[standard]==0.34.0
+starlette==0.46.2
+
+# =========================
+# Database (PostgreSQL)
+# =========================
+sqlalchemy[asyncio]==2.0.36
+psycopg[binary]==3.3.4
+alembic==1.14.0
+
+# =========================
+# Auth / Security
+# =========================
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+bcrypt==5.0.0
+cryptography>=44.0.0,<46.0.0
+
+# =========================
+# Pydantic ecosystem (关键稳定点)
+# =========================
+pydantic==2.10.6
+pydantic-settings==2.10.1
+
+# =========================
+# LangChain (对齐版本)
+# =========================
+langchain-community==0.4.1
+
+# =========================
+# HTTP / utils
+# =========================
+python-multipart==0.0.20
+click==8.3.3
+six==1.17.0
+
+# =========================
+# Networking / runtime
+# =========================
+httptools==0.7.1
+watchfiles==1.1.1
+websockets==16.0
+
+# =========================
+# Misc crypto deps (JWT / RSA)
+# =========================
+rsa==4.9.1
+pyasn1==0.6.3
+ecdsa==0.19.2
+
+# =========================
+# System
+# =========================
+tzdata==2026.2
