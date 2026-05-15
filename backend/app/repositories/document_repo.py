@@ -9,7 +9,9 @@ from typing import Literal
 from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.chunker import Chunk
 from app.models.document import Document
+from app.models.document_chunk import DocumentChunk
 
 _Visibility = Literal["public", "department", "private"]
 _Status = Literal["processing", "completed", "failed"]
@@ -194,6 +196,34 @@ class DocumentRepo:
             await self.db.commit()
 
         return await self.get_by_id(document_id)
+
+    async def bulk_insert_chunks(self, document_id: int, chunks: list[Chunk]) -> list[int]:
+        """批量插入文档分块并返回各分块的数据库主键。
+
+        主键与 Qdrant 向量点 ID 保持一致，插入顺序与输入列表顺序一致。
+
+        Args:
+            document_id: 所属文档的主键 ID。
+            chunks: 由 chunk_document 生成的分块列表。
+
+        Returns:
+            与输入列表等长、按相同顺序排列的分块主键列表。
+        """
+        rows = [
+            DocumentChunk(
+                document_id=document_id,
+                chunk_index=c.chunk_index,
+                chunk_content=c.content,
+                tokens=c.tokens,
+                source_location=c.source_location,
+            )
+            for c in chunks
+        ]
+        self.db.add_all(rows)
+        await self.db.commit()
+        for row in rows:
+            await self.db.refresh(row)
+        return [row.id for row in rows]
 
     async def delete(self, document_id: int) -> None:
         """删除文档记录。

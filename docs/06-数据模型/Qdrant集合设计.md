@@ -9,7 +9,7 @@
 ```
 Collection: factory_chunks
   Distance:          Cosine
-  Vector Size:       1024（text-embedding-v3）
+  Vector Size:       1536（text-embedding-3-small）
   on_disk_payload:   true
 ```
 

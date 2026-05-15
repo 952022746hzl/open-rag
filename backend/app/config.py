@@ -21,5 +21,10 @@ class Settings(BaseSettings):
     MINIO_SECURE: bool = False
     MINIO_BUCKET: str = "factory-documents"
 
+    OPENAI_API_KEY: str
+    OPENAI_API_URL: str = "https://api.openai.com/v1"
+    QDRANT_URL: str = "http://localhost:6333"
+    QDRANT_COLLECTION: str = "factory_chunks"
+
 
 settings = Settings()

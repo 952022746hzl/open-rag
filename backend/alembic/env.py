@@ -9,6 +9,7 @@ from app.database import Base
 import app.models.department  # noqa: register model
 import app.models.user  # noqa: register model
 import app.models.document  # noqa: register model
+import app.models.document_chunk  # noqa: register model
 
 config = context.config
 if config.config_file_name is not None:

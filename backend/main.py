@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from app.api.v1 import auth, documents, users
 from app.config import settings
 from app.core.storage import ensure_bucket
+from app.core.vector_store import ensure_collection
 from app.database import AsyncSessionLocal
 from app.repositories.user_repo import UserRepo
 
@@ -25,6 +26,7 @@ async def _init_admin() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await ensure_bucket()
+    await ensure_collection()
     await _init_admin()
     yield
 
