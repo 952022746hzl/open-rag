@@ -13,6 +13,11 @@ psycopg[binary]==3.3.4
 alembic==1.14.0
 
 # =========================
+# Object Storage
+# =========================
+minio==7.2.9
+
+# =========================
 # Auth / Security
 # =========================
 python-jose[cryptography]==3.3.0

@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import decode_access_token
 from app.database import get_db
+from app.repositories.document_repo import DocumentRepo
 from app.repositories.user_repo import UserRepo
 
 _bearer = HTTPBearer()
@@ -78,6 +79,18 @@ async def require_admin(current_user: CurrentUser = Depends(get_current_user)) -
     if current_user.role != "admin":
         raise HTTPException(status.HTTP_403_FORBIDDEN, detail="需要管理员权限")
     return current_user
+
+
+def get_document_repo(db: AsyncSession = Depends(get_db)) -> DocumentRepo:
+    """创建并返回 DocumentRepo 实例。
+
+    Args:
+        db: 由 get_db 注入的异步数据库会话。
+
+    Returns:
+        绑定当前会话的 DocumentRepo 实例。
+    """
+    return DocumentRepo(db)
 
 
 def get_user_repo(db: AsyncSession = Depends(get_db)) -> UserRepo:
