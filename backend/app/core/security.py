@@ -2,7 +2,8 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-import bcrypt
+from argon2 import PasswordHasher
+from argon2.exceptions import VerifyMismatchError
 from jose import jwt
 
 from app.config import settings
@@ -10,13 +11,18 @@ from app.config import settings
 _private_key: str | None = None
 _public_key: str | None = None
 
+_ph = PasswordHasher()
+
 
 def hash_password(password: str) -> str:
-    return bcrypt.hashpw(password.encode(), bcrypt.gensalt(rounds=12)).decode()
+    return _ph.hash(password)
 
 
 def verify_password(plain: str, hashed: str) -> bool:
-    return bcrypt.checkpw(plain.encode(), hashed.encode())
+    try:
+        return _ph.verify(hashed, plain)
+    except VerifyMismatchError:
+        return False
 
 
 def _get_private_key() -> str:

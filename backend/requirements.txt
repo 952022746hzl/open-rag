@@ -16,18 +16,25 @@ alembic==1.14.0
 # Auth / Security
 # =========================
 python-jose[cryptography]==3.3.0
-passlib[bcrypt]==1.7.4
-bcrypt==5.0.0
+argon2-cffi==23.1.0
 cryptography>=44.0.0,<46.0.0
 
 # =========================
-# Pydantic ecosystem (关键稳定点)
+# Pydantic
 # =========================
 pydantic==2.10.6
 pydantic-settings==2.10.1
 
 # =========================
-# LangChain (对齐版本)
+# Document Parsing
+# =========================
+PyMuPDF==1.24.9
+python-docx==1.1.2
+openpyxl==3.1.5
+python-pptx==0.6.23
+
+# =========================
+# LangChain
 # =========================
 langchain-community==0.4.1
 
