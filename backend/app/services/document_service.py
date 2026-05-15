@@ -8,6 +8,7 @@ from app.api.deps import CurrentUser
 from app.core.chunker import chunk_document
 from app.core.embedder import embed_texts
 from app.core.parsers import SUPPORTED_TYPES, parse_document
+from app.core.sparse_encoder import encode_sparse
 from app.core.storage import build_object_key, put_object
 from app.core.vector_store import VectorPoint, upsert_points
 from app.models.document import Document
@@ -105,12 +106,14 @@ class DocumentService:
             assert result is not None
             return result
 
-        # Embedding
+        # Embedding（稠密 + 稀疏，BM25 为同步 CPU 操作）
+        texts = [c.content for c in chunks]
         try:
-            embeddings = await embed_texts([c.content for c in chunks])
+            embeddings = await embed_texts(texts)
         except Exception as exc:
             await self.repo.set_status(doc.id, "failed", error_message=f"Embedding 失败: {exc}")
             raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail="向量化失败") from exc
+        sparse_embeddings = encode_sparse(texts)
 
         # 写入 document_chunks，获取主键作为 Qdrant point ID
         chunk_ids = await self.repo.bulk_insert_chunks(doc.id, chunks)
@@ -121,6 +124,7 @@ class DocumentService:
             VectorPoint(
                 id=chunk_ids[i],
                 vector=embeddings[i],
+                sparse_vector=sparse_embeddings[i],
                 payload={
                     "document_id": doc.id,
                     "chunk_id": chunk_ids[i],

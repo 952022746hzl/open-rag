@@ -197,6 +197,20 @@ class DocumentRepo:
 
         return await self.get_by_id(document_id)
 
+    async def get_by_ids(self, document_ids: set[int]) -> list[Document]:
+        """批量查询文档记录，用于检索结果中批量取 object_key。
+
+        Args:
+            document_ids: 文档主键集合。
+
+        Returns:
+            匹配的 Document 列表，顺序不保证与输入一致。
+        """
+        if not document_ids:
+            return []
+        stmt = select(Document).where(Document.id.in_(document_ids))
+        return list((await self.db.execute(stmt)).scalars().all())
+
     async def bulk_insert_chunks(self, document_id: int, chunks: list[Chunk]) -> list[int]:
         """批量插入文档分块并返回各分块的数据库主键。
 

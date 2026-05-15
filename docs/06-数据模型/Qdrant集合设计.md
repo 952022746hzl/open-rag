@@ -8,10 +8,13 @@
 
 ```
 Collection: factory_chunks
-  Distance:          Cosine
-  Vector Size:       1536（text-embedding-3-small）
-  on_disk_payload:   true
+  向量配置（命名向量）：
+    dense:   VectorParams(size=1536, distance=Cosine)   # text-embedding-3-small
+    sparse:  SparseVectorParams()                        # fastembed BM25
+  on_disk_payload: true
 ```
+
+> 混合检索：检索时对 dense 和 sparse 分别执行 prefetch，再用 RRF（Reciprocal Rank Fusion）融合两路排名，兼顾语义相似度和关键字精确匹配。
 
 ---
 

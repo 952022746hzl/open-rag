@@ -26,5 +26,10 @@ class Settings(BaseSettings):
     QDRANT_URL: str = "http://localhost:6333"
     QDRANT_COLLECTION: str = "factory_chunks"
 
+    # 过采样倍率：内部向 Qdrant 请求 top_k × 倍率个 chunk，再按文档分组裁剪
+    SEARCH_OVERSAMPLING_FACTOR: int = 5
+    # 单文档最多返回的 chunk 数，避免一个文档独占所有结果槽
+    SEARCH_CHUNKS_PER_DOC: int = 3
+
 
 settings = Settings()

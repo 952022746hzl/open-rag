@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from app.api.v1 import auth, documents, users
+from app.api.v1 import auth, documents, search, users
 from app.config import settings
 from app.core.storage import ensure_bucket
 from app.core.vector_store import ensure_collection
@@ -36,6 +36,7 @@ app = FastAPI(title="Open RAG API", version="0.1.0", lifespan=lifespan)
 app.include_router(auth.router, prefix="/api/v1")
 app.include_router(users.router, prefix="/api/v1")
 app.include_router(documents.router, prefix="/api/v1")
+app.include_router(search.router, prefix="/api/v1")
 
 if __name__ == "__main__":
     import uvicorn

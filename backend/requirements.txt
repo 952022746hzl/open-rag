@@ -43,7 +43,8 @@ tiktoken==0.7.0
 # Embedding & Vector Store
 # =========================
 openai==2.36.0
-qdrant-client==1.9.1
+qdrant-client==1.12.1
+fastembed==0.3.6
 
 # =========================
 # LangChain
