@@ -31,5 +31,8 @@ class Settings(BaseSettings):
     # 单文档最多返回的 chunk 数，避免一个文档独占所有结果槽
     SEARCH_CHUNKS_PER_DOC: int = 3
 
+    OPENAI_CHAT_MODEL: str = "deepseek-chat"
+    CHAT_HISTORY_WINDOW: int = 5
+
 
 settings = Settings()
