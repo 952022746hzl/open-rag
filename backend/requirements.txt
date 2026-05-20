@@ -45,6 +45,7 @@ tiktoken==0.7.0
 openai==2.36.0
 qdrant-client==1.12.1
 fastembed==0.3.6
+sentence-transformers>=3.0.0,<4.0.0
 
 # =========================
 # LangChain

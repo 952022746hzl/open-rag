@@ -4,9 +4,12 @@
 自动重试（context_length_exceeded）→ 持久化记录 → 返回带引用的响应。
 """
 
+import logging
 from datetime import datetime, timezone
 
 import openai
+
+logger = logging.getLogger(__name__)
 from fastapi import HTTPException, status
 
 from app.api.deps import CurrentUser
@@ -101,6 +104,11 @@ class ChatService:
             if session is None or session.user_id != current_user.user_id:
                 raise HTTPException(status.HTTP_404_NOT_FOUND, detail="会话不存在")
 
+        logger.info(
+            "chat start session=%s user=%d top_k=%d question=%r",
+            session.session_id, current_user.user_id, req.top_k, req.question[:50],
+        )
+
         # 混合检索相关 chunk
         search_resp = await self.search_svc.search(
             SearchRequest(
@@ -112,6 +120,10 @@ class ChatService:
             current_user,
         )
         results = search_resp.results
+        logger.info(
+            "search done chunks=%d rerank=%s",
+            len(results), search_resp.rerank_applied,
+        )
 
         # 查询历史，滑动窗口重试
         history = await self.qa_repo.get_history(
@@ -125,6 +137,7 @@ class ChatService:
 
         while True:
             messages = _build_messages(req.question, history[-window:] if window else [], results)
+            logger.info("llm call messages=%d history_window=%d", len(messages), window)
             try:
                 answer, tokens_used = await chat_complete(messages)
                 break
@@ -132,10 +145,16 @@ class ChatService:
                 if window > 1 and "context_length" in str(e).lower():
                     window -= 1
                     window_reduced = True
+                    logger.warning("context too long, reduced history window to %d", window)
                 else:
                     raise HTTPException(
                         status.HTTP_500_INTERNAL_SERVER_ERROR, detail="LLM 调用失败"
                     ) from e
+
+        logger.info(
+            "llm done session=%s turn=%d tokens=%d",
+            session.session_id, session.turn_count + 1, tokens_used,
+        )
 
         # 构建引用列表
         citations = [

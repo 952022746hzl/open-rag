@@ -11,3 +11,8 @@
   .env 中的 DATABASE_URL 格式：
 
   DATABASE_URL=postgresql+psycopg://用户名:密码@主机地址:5432/数据库名
+  
+
+    # 4 下载rerank模型
+    
+python -c "from sentence_transformers import CrossEncoder; CrossEncoder('BAAI/bge-reranker-v2-m3')"

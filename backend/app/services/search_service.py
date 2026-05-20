@@ -3,17 +3,22 @@
 负责构建权限过滤器、合并业务过滤条件、调用 Qdrant 检索，并为结果补充 MinIO 预签名 URL。
 """
 
-from collections import defaultdict
+import asyncio
+import logging
 from datetime import datetime, timezone
 
+from fastapi import HTTPException
 from qdrant_client.models import FieldCondition, Filter, MatchAny, MatchValue, Range
+
+logger = logging.getLogger(__name__)
 
 from app.api.deps import CurrentUser
 from app.config import settings
+from app.core import reranker as reranker_service
 from app.core.embedder import embed_texts
 from app.core.sparse_encoder import encode_sparse
 from app.core.storage import get_presigned_url
-from app.core.vector_store import hybrid_search
+from app.core.vector_store import fetch_document_chunks, hybrid_search
 from app.repositories.document_repo import DocumentRepo
 from app.schemas.search import SearchFilter, SearchRequest, SearchResponse, SearchResultItem
 
@@ -93,21 +98,23 @@ class SearchService:
         self.repo = repo
 
     async def search(self, req: SearchRequest, current_user: CurrentUser) -> SearchResponse:
-        """执行带权限过滤的语义检索。
+        """执行带权限过滤的两阶段文档优先检索。
 
-        步骤：向量化查询 → 构建过滤器 → 过采样 ANN 搜索 →
-        按文档分组（保证高相关文档多片召回）→ 批量获取 object_key → 生成预签名 URL → 组装响应。
-
-        内部搜索量 = top_k × SEARCH_OVERSAMPLING_FACTOR，确保同一文档的多个 chunk
-        有机会进入候选池；再按文档分组后，每个文档最多保留 SEARCH_CHUNKS_PER_DOC 个 chunk，
-        文档间按最高分排序，最终裁剪至 top_k 条返回。
+        阶段一：向量化查询 → 过采样混合检索 → （可选）cross-encoder 精排
+            → 按文档最高分识别 Top N 相关文档。
+        阶段二：对 Top N 文档直接从 Qdrant 拉取全量 chunk（含评分较低的页面），
+            保证同文档内的低分 chunk 优先于其他文档的高分 chunk 出现在结果中。
 
         Args:
-            req: 检索请求，包含查询词、topK、阈值及业务过滤条件。
+            req: 检索请求，包含查询词、topK、阈值、rerank 开关及业务过滤条件。
             current_user: 已通过 JWT 认证的当前用户，用于构建权限过滤。
 
         Returns:
-            按文档相关度排列的检索结果列表及结果总数。
+            按文档相关度排列的检索结果列表、结果总数及 rerank_applied 标志。
+
+        Raises:
+            HTTPException 503: reranker 不可用。
+            HTTPException 504: reranker 推理超时。
         """
         embeddings = await embed_texts([req.query])
         query_vector = embeddings[0]
@@ -120,7 +127,7 @@ class SearchService:
             user_filter=req.filter,
         )
 
-        # 过采样：内部多取，保证同一文档的次高分 chunk 也进入候选池
+        # 过采样：内部多取，保证候选池足够大供 reranker 精排
         raw_hits = await hybrid_search(
             dense_vector=query_vector,
             sparse_vector=sparse_vecs[0],
@@ -128,28 +135,73 @@ class SearchService:
             top_k=req.top_k * settings.SEARCH_OVERSAMPLING_FACTOR,
             score_threshold=req.score_threshold,
         )
+        logger.info(
+            "hybrid raw=%d top_k=%d threshold=%.2f",
+            len(raw_hits), req.top_k, req.score_threshold,
+        )
 
-        # 按文档分组（Qdrant 已全局按分数降序排列，组内顺序即分数由高到低）
-        doc_hits: dict[int, list] = defaultdict(list)
+        # Rerank：在文档分组前对全量候选集精排
+        rerank_applied = False
+        if req.use_rerank and raw_hits:
+            top_n = req.rerank_top_n or (req.top_k * settings.SEARCH_OVERSAMPLING_FACTOR)
+            try:
+                raw_hits, rerank_applied = await reranker_service.rerank(
+                    query=req.query,
+                    hits=raw_hits,
+                    top_n=top_n,
+                )
+            except asyncio.TimeoutError:
+                logger.warning("reranker timeout")
+                raise HTTPException(status_code=504, detail="reranker timeout")
+            except Exception as exc:
+                logger.error("reranker error: %s", exc)
+                raise HTTPException(status_code=503, detail="reranker unavailable")
+        logger.info("rerank applied=%s hits_after=%d", rerank_applied, len(raw_hits))
+
+        # ── 阶段一：识别相关文档，按各文档最高 chunk 分降序排列 ──────────────
+        doc_best_score: dict[int, float] = {}
         for hit in raw_hits:
-            doc_hits[hit.payload["document_id"]].append(hit)
+            doc_id = hit.payload["document_id"]
+            if hit.score > doc_best_score.get(doc_id, -1):
+                doc_best_score[doc_id] = hit.score
+        ranked_doc_ids = sorted(doc_best_score, key=doc_best_score.__getitem__, reverse=True)
+        logger.info("stage1 docs=%d ids=%s", len(ranked_doc_ids), ranked_doc_ids[:5])
 
-        # 文档按组内最高分排序，每个文档取前 SEARCH_CHUNKS_PER_DOC 个 chunk
-        sorted_docs = sorted(doc_hits, key=lambda d: doc_hits[d][0].score, reverse=True)
-        hits = []
-        for doc_id in sorted_docs:
-            hits.extend(doc_hits[doc_id][: settings.SEARCH_CHUNKS_PER_DOC])
+        # ── 阶段二：拉取相关文档的全量 chunk，补全低分页面 ───────────────────
+        all_doc_chunks = await fetch_document_chunks(
+            document_ids=ranked_doc_ids,
+            query_filter=combined_filter,
+            limit_per_doc=settings.SEARCH_CHUNKS_PER_DOC,
+        )
+        logger.info(
+            "stage2 docs=%d chunks=%d",
+            len(all_doc_chunks),
+            sum(len(v) for v in all_doc_chunks.values()),
+        )
+
+        # 已命中的 chunk 保留其真实分数，未命中的继承所在文档最高分
+        chunk_scores: dict[int, float] = {
+            hit.payload["chunk_id"]: hit.score for hit in raw_hits
+        }
+
+        # 按文档排名顺序拼接，组内按 point ID（写入顺序即页面顺序）升序
+        # top_k 控制"何时停止纳入新文档"，不在文档内部截断，保证同文档完整性
+        hits: list[tuple[dict, float]] = []
+        for doc_id in ranked_doc_ids:
+            records = sorted(all_doc_chunks.get(doc_id, []), key=lambda r: r.id)
+            for record in records:
+                chunk_id = record.payload["chunk_id"]
+                score = chunk_scores.get(chunk_id, doc_best_score[doc_id])
+                hits.append((record.payload, score))
             if len(hits) >= req.top_k:
                 break
-        hits = hits[: req.top_k]
 
         # 批量取 object_key，避免 N+1 查询
-        doc_ids = {hit.payload["document_id"] for hit in hits}
+        doc_ids = {payload["document_id"] for payload, _ in hits}
         docs = {doc.id: doc for doc in await self.repo.get_by_ids(doc_ids)}
 
         results: list[SearchResultItem] = []
-        for hit in hits:
-            payload = hit.payload
+        for payload, score in hits:
             doc = docs.get(payload["document_id"])
             download_url = ""
             if doc and doc.object_key:
@@ -164,8 +216,9 @@ class SearchService:
                 tags=payload.get("tags") or [],
                 source_location=payload.get("source_location"),
                 snippet=payload.get("snippet", ""),
-                score=hit.score,
+                score=score,
                 download_url=download_url,
             ))
 
-        return SearchResponse(results=results, total=len(results))
+        logger.info("search done results=%d rerank=%s", len(results), rerank_applied)
+        return SearchResponse(results=results, total=len(results), rerank_applied=rerank_applied)

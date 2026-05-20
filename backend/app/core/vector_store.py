@@ -4,6 +4,7 @@
 混合检索通过 query_points + FusionQuery(RRF) 实现，由 Qdrant 原生融合。
 """
 
+from collections import defaultdict
 from dataclasses import dataclass
 
 from qdrant_client import AsyncQdrantClient
@@ -14,6 +15,7 @@ from qdrant_client.models import (
     FilterSelector,
     Fusion,
     FusionQuery,
+    MatchAny,
     MatchValue,
     PointStruct,
     Prefetch,
@@ -141,6 +143,54 @@ async def hybrid_search(
         with_payload=True,
     )
     return response.points
+
+
+async def fetch_document_chunks(
+    document_ids: list[int],
+    query_filter: Filter | None,
+    limit_per_doc: int,
+) -> dict[int, list]:
+    """按文档 ID 列表从 Qdrant 拉取对应文档的全部 chunk。
+
+    用于文档优先检索第二阶段：先由混合检索识别相关文档，再补全每个文档的全量 chunk，
+    保证同一文档内低分 chunk 也能被返回，而非被其他文档的高分 chunk 挤占。
+
+    Args:
+        document_ids: 已识别的相关文档 ID 列表，按相关度降序排列。
+        query_filter: 权限 + 业务过滤器，与文档 ID 过滤取 AND。
+        limit_per_doc: 每个文档最多返回的 chunk 数量。
+
+    Returns:
+        {document_id: [Record, ...]} 字典，每个文档最多 limit_per_doc 条，
+        组内记录按 Qdrant point ID（即 chunk 写入顺序）升序排列。
+    """
+    client = _get_client()
+    doc_filter = Filter(
+        must=[FieldCondition(key="document_id", match=MatchAny(any=document_ids))]
+    )
+    combined = Filter(must=[query_filter, doc_filter]) if query_filter else doc_filter
+
+    result: dict[int, list] = defaultdict(list)
+    offset = None
+    while True:
+        records, next_offset = await client.scroll(
+            collection_name=settings.QDRANT_COLLECTION,
+            scroll_filter=combined,
+            limit=256,
+            offset=offset,
+            with_payload=True,
+            with_vectors=False,
+        )
+        for record in records:
+            doc_id = record.payload["document_id"]
+            if len(result[doc_id]) < limit_per_doc:
+                result[doc_id].append(record)
+        if next_offset is None:
+            break
+        if all(len(result.get(d, [])) >= limit_per_doc for d in document_ids):
+            break
+        offset = next_offset
+    return dict(result)
 
 
 async def delete_by_document(document_id: int) -> None:

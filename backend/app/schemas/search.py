@@ -33,12 +33,17 @@ class SearchRequest(BaseModel):
         top_k: 返回最相似的 k 条结果，默认 5。
         score_threshold: 相似度分数阈值，低于此值的结果过滤掉，默认 0.6。
         filter: 业务过滤条件，为 None 时仅施加权限过滤。
+        use_rerank: 是否启用重排序，默认 True。
+        rerank_top_n: reranker 保留的候选数量，默认等于 top_k × SEARCH_OVERSAMPLING_FACTOR（全量候选）；
+            显式传入时可缩小候选池以降低延迟。
     """
 
     query: str
     top_k: int = Field(default=5, ge=1, le=50)
     score_threshold: float = Field(default=0.6, ge=0.0, le=1.0)
     filter: SearchFilter | None = None
+    use_rerank: bool = False
+    rerank_top_n: int | None = None
 
 
 class SearchResultItem(BaseModel):
@@ -75,7 +80,9 @@ class SearchResponse(BaseModel):
     Attributes:
         results: 检索结果列表，已按相似度降序排列。
         total: 本次返回的结果数量。
+        rerank_applied: 本次是否实际执行了重排序。
     """
 
     results: list[SearchResultItem]
     total: int
+    rerank_applied: bool = False

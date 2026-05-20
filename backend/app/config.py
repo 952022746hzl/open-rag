@@ -26,13 +26,16 @@ class Settings(BaseSettings):
     QDRANT_URL: str = "http://localhost:6333"
     QDRANT_COLLECTION: str = "factory_chunks"
 
-    # 过采样倍率：内部向 Qdrant 请求 top_k × 倍率个 chunk，再按文档分组裁剪
+    # 过采样倍率：内部向 Qdrant 请求 top_k × 倍率个 chunk，用于阶段一文档识别
     SEARCH_OVERSAMPLING_FACTOR: int = 5
-    # 单文档最多返回的 chunk 数，避免一个文档独占所有结果槽
-    SEARCH_CHUNKS_PER_DOC: int = 3
+    # 阶段二每个文档最多补全的 chunk 数（需覆盖单文档最多页数，建议 20）
+    SEARCH_CHUNKS_PER_DOC: int = 20
 
     OPENAI_CHAT_MODEL: str = "deepseek-chat"
     CHAT_HISTORY_WINDOW: int = 5
+
+    RERANKER_MODEL_PATH: str = "BAAI/bge-reranker-v2-m3"
+    RERANKER_TIMEOUT_S: float = 10.0
 
 
 settings = Settings()
